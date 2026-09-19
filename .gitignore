@@ -1,0 +1,25 @@
+# Secrets & Environment variables
+.env
+.env.*
+*.env
+!.env.example
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Testing & Cache
+.pytest_cache/
+.cache/
+logs/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+
