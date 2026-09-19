@@ -13,11 +13,13 @@ if str(LEGALLENS_DIR) not in sys.path:
 
 from utils.file_reader import MAX_FILE_SIZE_BYTES, MAX_PDF_PAGES, extract_text
 from utils.security import (
+    compact_text,
     sanitize_error_message,
     sanitize_html,
     sanitize_input,
     wrap_untrusted_content,
 )
+
 
 
 def test_sanitize_input_strips_control_chars():
@@ -89,3 +91,13 @@ def test_extract_text_rejects_excessive_pdf_pages(monkeypatch):
 
     with pytest.raises(ValueError, match="exceeding the 100-page limit"):
         extract_text(fake_file)
+
+
+def test_compact_text_collapses_whitespace():
+    """Verify that compact_text normalizes excessive newlines and spaces."""
+    raw = "Paragraph 1\n\n\n\n\nParagraph 2    with   extra   spaces\n\n\nParagraph 3"
+    result = compact_text(raw)
+    assert result == "Paragraph 1\n\nParagraph 2 with extra spaces\n\nParagraph 3"
+    assert compact_text("") == ""
+    assert compact_text(None) == ""
+

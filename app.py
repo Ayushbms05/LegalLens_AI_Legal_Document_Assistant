@@ -15,7 +15,12 @@ from services.simplify_service import simplify_document
 from utils.doc_exporter import export_to_docx
 from utils.file_reader import extract_text
 from utils.legal_checker import is_likely_legal_document
-from utils.security import sanitize_error_message, sanitize_html, sanitize_input
+from utils.security import (
+    compact_text,
+    sanitize_error_message,
+    sanitize_html,
+    sanitize_input,
+)
 
 
 def render_ai_footer() -> None:
@@ -28,7 +33,7 @@ def render_ai_footer() -> None:
 
 def update_active_document(new_text: str, new_name: str) -> None:
     """Update active document and invalidate cached analyses if the document changed."""
-    sanitized_text = sanitize_input(new_text, max_length=100_000)
+    sanitized_text = compact_text(sanitize_input(new_text, max_length=100_000))
     if st.session_state.get("doc_text") != sanitized_text:
         st.session_state["doc_text"] = sanitized_text
         st.session_state["doc_name"] = sanitize_input(new_name, max_length=255)
@@ -37,6 +42,9 @@ def update_active_document(new_text: str, new_name: str) -> None:
         st.session_state.pop("risk_result", None)
         st.session_state.pop("qa_chat_history", None)
         st.session_state.pop("action_result", None)
+        st.session_state.pop("cached_docx_bytes", None)
+        st.session_state.pop("cached_docx_key", None)
+
 
 
 def main() -> None:
@@ -139,14 +147,43 @@ def main() -> None:
             white-space: nowrap;
             border: 0;
         }
+
+        /* WCAG 2.4.1 Skip Link for keyboard navigation */
+        .skip-link {
+            position: absolute;
+            top: -100px;
+            left: 12px;
+            background: #0284c7;
+            color: #ffffff !important;
+            padding: 10px 18px;
+            z-index: 100000;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-decoration: none;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+            transition: top 0.2s ease-in-out;
+        }
+        .skip-link:focus {
+            top: 12px;
+            outline: 3px solid #38bdf8 !important;
+            outline-offset: 2px !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
+    # WCAG 2.4.1 Bypass Blocks: Skip to main content link for keyboard and screen-reader users
+    st.markdown(
+        '<a href="#main-content" class="skip-link">Skip to main content</a>'
+        '<div role="status" aria-live="polite" class="sr-only">LegalLens application loaded.</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Brand Header with Logo and Title
+    # Brand Header with Landmark role="banner"
     logo_path = Path(__file__).parent / "assets" / "logo.jpg"
+    st.markdown('<header role="banner">', unsafe_allow_html=True)
     col_logo, col_title = st.columns([1, 11])
     with col_logo:
         if logo_path.exists():
@@ -168,6 +205,11 @@ def main() -> None:
             "AI-assisted legal document understanding. "
             "Provides legal information only, never legal advice."
         )
+    st.markdown('</header>', unsafe_allow_html=True)
+
+    # Main content landmark for assistive technologies
+    st.markdown('<main role="main" id="main-content">', unsafe_allow_html=True)
+
 
     # How it works overview section
     with st.expander("ℹ️ How LegalLens Works", expanded=not bool(st.session_state.get("doc_text"))):
@@ -219,12 +261,20 @@ def main() -> None:
         )
 
         if uploaded_file is not None:
-            try:
-                extracted = extract_text(uploaded_file)
-                update_active_document(extracted, uploaded_file.name)
-                st.success(f"Loaded: {uploaded_file.name}")
-            except Exception as exc:
-                st.error(f"Error reading file: {sanitize_error_message(exc)}")
+            file_sig = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', 0)}"
+            if st.session_state.get("last_uploaded_file_sig") != file_sig:
+                try:
+                    extracted = extract_text(uploaded_file)
+                    update_active_document(extracted, uploaded_file.name)
+                    st.session_state["last_uploaded_file_sig"] = file_sig
+                    st.session_state["upload_status_msg"] = f"Loaded: {uploaded_file.name}"
+                except Exception as exc:
+                    st.session_state["upload_status_msg"] = None
+                    st.error(f"Error reading file: {sanitize_error_message(exc)}")
+
+            if st.session_state.get("upload_status_msg"):
+                st.success(st.session_state["upload_status_msg"])
+
 
         st.markdown("---")
         st.subheader("💡 Try a Sample")
@@ -285,14 +335,17 @@ def main() -> None:
                     "Reading Level",
                     options=["Simple", "Explain like I'm 15"],
                     horizontal=True,
+                    help="Choose standard plain language or a 15-year-old high school reading level.",
                 )
             with col2:
                 language = st.selectbox(
                     "Language",
                     options=["English", "Hindi", "Kannada"],
+                    help="Select the language for the simplified output.",
                 )
 
-            if st.button("Simplify", type="primary"):
+            if st.button("Simplify", type="primary", help="Analyze and generate a plain-language summary of the loaded document."):
+
                 with st.spinner("Analyzing document with Gemini..."):
                     try:
                         result = simplify_document(
@@ -341,7 +394,8 @@ def main() -> None:
                 "in the sidebar to get started."
             )
         else:
-            if st.button("Analyze Risks", type="primary"):
+            if st.button("Analyze Risks", type="primary", help="Scan document for high, medium, and low risks, and verify all clause quotes."):
+
                 with st.spinner("Analyzing clauses, inconsistencies, and risk levels..."):
                     try:
                         result = analyze_risks(st.session_state["doc_text"])
@@ -387,10 +441,11 @@ def main() -> None:
                         "Renewal",
                         "Other",
                     ]
-                    selected_cat = st.selectbox("Filter by Category", category_options)
+                    selected_cat = st.selectbox("Filter by Category", category_options, help="Filter clauses by their legal domain.")
                 with filter_col2:
                     level_options = ["All", "High", "Medium", "Low"]
-                    selected_level = st.selectbox("Filter by Risk Level", level_options)
+                    selected_level = st.selectbox("Filter by Risk Level", level_options, help="Filter clauses by assessed risk severity.")
+
 
                 # Filter clauses
                 clauses = res.get("clauses", [])
@@ -581,17 +636,20 @@ def main() -> None:
                 "Upload Document A",
                 type=["pdf", "docx", "txt"],
                 key="uploader_doc_a",
+                help="Upload the first version or contract to compare (PDF, DOCX, or TXT).",
             )
             if uploaded_a:
-                try:
-                    new_text_a = extract_text(uploaded_a)
-                    if st.session_state["doc_a_text"] != new_text_a:
-                        st.session_state["doc_a_text"] = new_text_a
+                sig_a = f"{uploaded_a.name}_{getattr(uploaded_a, 'size', 0)}"
+                if st.session_state.get("last_uploaded_a_sig") != sig_a:
+                    try:
+                        new_text_a = extract_text(uploaded_a)
+                        st.session_state["doc_a_text"] = compact_text(new_text_a)
                         st.session_state["doc_a_name"] = uploaded_a.name
+                        st.session_state["last_uploaded_a_sig"] = sig_a
                         st.session_state.pop("compare_result", None)
-                    st.success(f"Loaded: {uploaded_a.name}")
-                except Exception as exc:
-                    st.error(f"Error reading Document A: {exc}")
+                        st.success(f"Loaded: {uploaded_a.name}")
+                    except Exception as exc:
+                        st.error(f"Error reading Document A: {sanitize_error_message(exc)}")
 
             if st.session_state["doc_a_name"]:
                 st.caption(f"Active: `{st.session_state['doc_a_name']}` ({len(st.session_state['doc_a_text'])} chars)")
@@ -602,17 +660,20 @@ def main() -> None:
                 "Upload Document B",
                 type=["pdf", "docx", "txt"],
                 key="uploader_doc_b",
+                help="Upload the second version or contract to compare (PDF, DOCX, or TXT).",
             )
             if uploaded_b:
-                try:
-                    new_text_b = extract_text(uploaded_b)
-                    if st.session_state["doc_b_text"] != new_text_b:
-                        st.session_state["doc_b_text"] = new_text_b
+                sig_b = f"{uploaded_b.name}_{getattr(uploaded_b, 'size', 0)}"
+                if st.session_state.get("last_uploaded_b_sig") != sig_b:
+                    try:
+                        new_text_b = extract_text(uploaded_b)
+                        st.session_state["doc_b_text"] = compact_text(new_text_b)
                         st.session_state["doc_b_name"] = uploaded_b.name
+                        st.session_state["last_uploaded_b_sig"] = sig_b
                         st.session_state.pop("compare_result", None)
-                    st.success(f"Loaded: {uploaded_b.name}")
-                except Exception as exc:
-                    st.error(f"Error reading Document B: {exc}")
+                        st.success(f"Loaded: {uploaded_b.name}")
+                    except Exception as exc:
+                        st.error(f"Error reading Document B: {sanitize_error_message(exc)}")
 
             if st.session_state["doc_b_name"]:
                 st.caption(f"Active: `{st.session_state['doc_b_name']}` ({len(st.session_state['doc_b_text'])} chars)")
@@ -624,7 +685,8 @@ def main() -> None:
         if not can_compare:
             st.info("👈 Please load or upload both Document A and Document B to compare them.")
         else:
-            if st.button("Compare Documents", type="primary"):
+            if st.button("Compare Documents", type="primary", help="Compare Document A and Document B for differences and signer favorability."):
+
                 with st.spinner("Analyzing differences, favorability, and clauses..."):
                     try:
                         result = compare_documents(
@@ -721,7 +783,7 @@ def main() -> None:
         else:
             col_act_btn, col_exp_btn = st.columns([1, 1])
             with col_act_btn:
-                if st.button("Generate Action Plan", type="primary"):
+                if st.button("Generate Action Plan", type="primary", help="Generate pre-signing checklist, deadlines, and questions for counsel."):
                     with st.spinner("Creating checklist, deadlines, and questions for counsel..."):
                         try:
                             result = generate_action_plan(st.session_state["doc_text"])
@@ -731,21 +793,36 @@ def main() -> None:
 
             # Export button available whenever analysis is present
             with col_exp_btn:
-                # Prepare Word document export
-                doc_bytes = export_to_docx(
-                    summary_data=st.session_state.get("simplify_result"),
-                    risks_data=st.session_state.get("risk_result"),
-                    action_data=st.session_state.get("action_result"),
-                    doc_name=st.session_state.get("doc_name", "Document"),
+                # Prepare Word document export (cached in session state to prevent redundant regeneration on rerun)
+                docx_cache_key = (
+                    st.session_state.get("doc_name", ""),
+                    id(st.session_state.get("simplify_result")),
+                    id(st.session_state.get("risk_result")),
+                    id(st.session_state.get("action_result")),
                 )
+                if (
+                    "cached_docx_bytes" not in st.session_state
+                    or st.session_state.get("cached_docx_key") != docx_cache_key
+                ):
+                    doc_bytes = export_to_docx(
+                        summary_data=st.session_state.get("simplify_result"),
+                        risks_data=st.session_state.get("risk_result"),
+                        action_data=st.session_state.get("action_result"),
+                        doc_name=st.session_state.get("doc_name", "Document"),
+                    )
+                    st.session_state["cached_docx_bytes"] = doc_bytes.getvalue()
+                    st.session_state["cached_docx_key"] = docx_cache_key
+
                 clean_name = Path(st.session_state.get("doc_name", "document")).stem
                 st.download_button(
                     label="📥 Download as Word file (.docx)",
-                    data=doc_bytes.getvalue(),
+                    data=st.session_state["cached_docx_bytes"],
                     file_name=f"LegalLens_Report_{clean_name}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     use_container_width=True,
+                    help="Download a formatted Microsoft Word report containing all analysis results.",
                 )
+
 
             if "action_result" in st.session_state:
                 res = st.session_state["action_result"]
@@ -787,12 +864,18 @@ def main() -> None:
                 st.markdown("---")
                 render_ai_footer()
 
-    # Global footer disclaimer
+    # Close main content landmark
+    st.markdown("</main>", unsafe_allow_html=True)
+
+    # Global footer disclaimer with landmark role="contentinfo"
     st.markdown("---")
+    st.markdown('<footer role="contentinfo">', unsafe_allow_html=True)
     st.caption(
         "⚖️ **Legal Notice**: LegalLens provides general legal information, not legal advice. "
         "Consult a qualified lawyer for your situation."
     )
+    st.markdown("</footer>", unsafe_allow_html=True)
+
 
 
 

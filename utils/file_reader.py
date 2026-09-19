@@ -11,6 +11,9 @@ import warnings
 from docx import Document
 import pypdf
 
+from utils.security import sanitize_input
+
+
 
 MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB maximum
 MAX_PDF_PAGES = 100  # 100 pages maximum for DoS prevention
@@ -152,8 +155,8 @@ def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
             file_stream.close()
 
     # Step 4: Validate that the extracted text is not empty and sanitize it
-    from utils.security import sanitize_input
     cleaned_output = sanitize_input(extracted_text.strip())
+
     if not cleaned_output:
         raise ValueError(
             f"The file '{Path(filename).name}' is empty or contains no readable text."

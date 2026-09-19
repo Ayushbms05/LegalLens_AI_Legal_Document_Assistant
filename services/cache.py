@@ -39,7 +39,7 @@ def compute_cache_key(
     if schema is not None:
         try:
             schema_str = json.dumps(schema, sort_keys=True)
-        except Exception:
+        except (TypeError, ValueError):
             schema_str = str(schema)
 
     raw_key = (
@@ -76,8 +76,8 @@ def get_cached_result(cache_key: str) -> Optional[Union[str, Dict[str, Any]]]:
             data = json.load(f)
             # Returns the actual stored payload
             return data.get("payload")
-    except Exception:
-        # Corrupt or unreadable cache file; ignore safely
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        # Corrupt, unreadable, or invalid cache file; safely ignore
         return None
 
 
@@ -98,8 +98,8 @@ def save_cached_result(cache_key: str, payload: Union[str, Dict[str, Any]]) -> N
         file_path = CACHE_DIR / f"{cache_key}.json"
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump({"payload": payload}, f, indent=2)
-    except Exception:
-        # Never crash on cache write failure
+    except (OSError, TypeError, ValueError):
+        # Gracefully handle write failures (e.g. read-only volume or non-serializable object)
         pass
 
 
@@ -127,8 +127,9 @@ def get_fallback_result(
                 data = json.load(f)
                 payload = data.get("payload", data)
                 return payload, "demo"
-        except Exception:
-            # Corrupt demo file; ignore safely
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            # Corrupt, unreadable, or invalid demo file; safely ignore
             pass
 
     return None, None
+
