@@ -15,6 +15,7 @@ from services.simplify_service import simplify_document
 from utils.doc_exporter import export_to_docx
 from utils.file_reader import extract_text
 from utils.legal_checker import is_likely_legal_document
+from utils.security import sanitize_error_message, sanitize_html, sanitize_input
 
 
 def render_ai_footer() -> None:
@@ -27,9 +28,10 @@ def render_ai_footer() -> None:
 
 def update_active_document(new_text: str, new_name: str) -> None:
     """Update active document and invalidate cached analyses if the document changed."""
-    if st.session_state.get("doc_text") != new_text:
-        st.session_state["doc_text"] = new_text
-        st.session_state["doc_name"] = new_name
+    sanitized_text = sanitize_input(new_text, max_length=100_000)
+    if st.session_state.get("doc_text") != sanitized_text:
+        st.session_state["doc_text"] = sanitized_text
+        st.session_state["doc_name"] = sanitize_input(new_name, max_length=255)
         # Invalidate previous document's cached results
         st.session_state.pop("simplify_result", None)
         st.session_state.pop("risk_result", None)
@@ -109,6 +111,34 @@ def main() -> None:
         div[data-baseweb="tab-border"] {
             display: none !important;
         }
+
+        /* WCAG 2.4.7 Focus Visible: Clear keyboard focus indicator */
+        button:focus-visible,
+        [tabindex]:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        [role="tab"]:focus-visible {
+            outline: 2px solid #38bdf8 !important;
+            outline-offset: 2px !important;
+        }
+
+        /* WCAG 1.4.3 Contrast: Ensure text passes 7:1 contrast ratio */
+        .stMarkdown p, .stMarkdown li, .stMarkdown span {
+            color: #f1f5f9 !important;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -120,7 +150,7 @@ def main() -> None:
     col_logo, col_title = st.columns([1, 11])
     with col_logo:
         if logo_path.exists():
-            st.markdown('<div class="brand-logo-img">', unsafe_allow_html=True)
+            st.markdown('<div class="brand-logo-img" role="img" aria-label="LegalLens Logo - AI Legal Document Assistant">', unsafe_allow_html=True)
             st.image(str(logo_path), width=76)
             st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -194,7 +224,7 @@ def main() -> None:
                 update_active_document(extracted, uploaded_file.name)
                 st.success(f"Loaded: {uploaded_file.name}")
             except Exception as exc:
-                st.error(f"Error reading file: {exc}")
+                st.error(f"Error reading file: {sanitize_error_message(exc)}")
 
         st.markdown("---")
         st.subheader("💡 Try a Sample")
@@ -272,7 +302,7 @@ def main() -> None:
                         )
                         st.session_state["simplify_result"] = result
                     except Exception as exc:
-                        st.error(f"Failed to simplify document: {exc}")
+                        st.error(f"Failed to simplify document: {sanitize_error_message(exc)}")
 
             # Display results if available
             if "simplify_result" in st.session_state:
@@ -317,7 +347,7 @@ def main() -> None:
                         result = analyze_risks(st.session_state["doc_text"])
                         st.session_state["risk_result"] = result
                     except Exception as exc:
-                        st.error(f"Failed to analyze risks: {exc}")
+                        st.error(f"Failed to analyze risks: {sanitize_error_message(exc)}")
 
             if "risk_result" in st.session_state:
                 res = st.session_state["risk_result"]
@@ -442,8 +472,8 @@ def main() -> None:
                 if st.button("📋 What are my obligations?", use_container_width=True):
                     prompt_to_process = "What are my obligations?"
 
-            # Text chat input
-            user_input = st.chat_input("Ask a question about this document...")
+            # Text chat input with length limit
+            user_input = st.chat_input("Ask a question about this document...", max_chars=1000)
             if user_input:
                 prompt_to_process = user_input
 
@@ -495,7 +525,7 @@ def main() -> None:
                                 "needs_lawyer": needs_lawyer,
                             })
                         except Exception as exc:
-                            st.error(f"Error answering question: {exc}")
+                            st.error(f"Error answering question: {sanitize_error_message(exc)}")
 
             if st.session_state["qa_chat_history"]:
                 st.markdown("---")
@@ -603,7 +633,7 @@ def main() -> None:
                         )
                         st.session_state["compare_result"] = result
                     except Exception as exc:
-                        st.error(f"Failed to compare documents: {exc}")
+                        st.error(f"Failed to compare documents: {sanitize_error_message(exc)}")
 
             if "compare_result" in st.session_state:
                 res = st.session_state["compare_result"]
@@ -697,7 +727,7 @@ def main() -> None:
                             result = generate_action_plan(st.session_state["doc_text"])
                             st.session_state["action_result"] = result
                         except Exception as exc:
-                            st.error(f"Failed to generate action plan: {exc}")
+                            st.error(f"Failed to generate action plan: {sanitize_error_message(exc)}")
 
             # Export button available whenever analysis is present
             with col_exp_btn:

@@ -12,6 +12,10 @@ from docx import Document
 import pypdf
 
 
+MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB maximum
+MAX_PDF_PAGES = 100  # 100 pages maximum for DoS prevention
+
+
 def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
     """Extract clean plain text from a supported file (.pdf, .docx, .txt).
 
@@ -24,7 +28,7 @@ def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
 
     Raises:
         ValueError: If the file format is unsupported, the file is empty,
-                    or no readable text could be extracted.
+                    the file exceeds size/page limits, or no readable text could be extracted.
     """
     # Step 1: Determine the filename and extension
     filename = getattr(uploaded_file, "name", None)
@@ -33,6 +37,13 @@ def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
 
     if not filename:
         raise ValueError("Could not determine the file name or file type.")
+
+    # Validate file size if size attribute is present
+    file_size = getattr(uploaded_file, "size", None)
+    if file_size is not None and file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"File '{Path(filename).name}' exceeds the maximum allowed size of 15 MB."
+        )
 
     extension = Path(filename).suffix.lower()
 
@@ -110,6 +121,11 @@ def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
             if total_pages == 0:
                 raise ValueError("The uploaded PDF has 0 pages.")
 
+            if total_pages > MAX_PDF_PAGES:
+                raise ValueError(
+                    f"The uploaded PDF has {total_pages} pages, exceeding the {MAX_PDF_PAGES}-page limit."
+                )
+
             page_texts = []
             for page_num, page in enumerate(reader.pages, start=1):
                 page_text = page.extract_text() or ""
@@ -135,8 +151,9 @@ def extract_text(uploaded_file: Union[BinaryIO, io.BytesIO, str, Path]) -> str:
         if isinstance(uploaded_file, (str, Path)) and hasattr(file_stream, "close"):
             file_stream.close()
 
-    # Step 4: Validate that the extracted text is not empty
-    cleaned_output = extracted_text.strip()
+    # Step 4: Validate that the extracted text is not empty and sanitize it
+    from utils.security import sanitize_input
+    cleaned_output = sanitize_input(extracted_text.strip())
     if not cleaned_output:
         raise ValueError(
             f"The file '{Path(filename).name}' is empty or contains no readable text."
