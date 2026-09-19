@@ -1,5 +1,7 @@
 # ⚖️ LegalLens - AI Legal Document Assistant
 
+> **🌐 Live Demo on Google Cloud Run**: **[https://legallens-615970426353.us-central1.run.app](https://legallens-615970426353.us-central1.run.app)**
+
 LegalLens is an AI-powered assistant that helps everyday people understand contracts and legal agreements in plain, simple English.
 
 Upload a contract (`.pdf`, `.docx`, or `.txt`) or click **"Load sample contract"** to instantly analyze it.
@@ -13,6 +15,15 @@ Upload a contract (`.pdf`, `.docx`, or `.txt`) or click **"Load sample contract"
 - 💬 **Ask Q&A**: Interactive chat grounded strictly in your document text with supporting quotes.
 - ⚖️ **Compare Versions**: Compare two drafts of a contract to see differences, missing clauses, and which version favors you.
 - 📋 **Action Plan**: Generates a pre-signing checklist, key deadlines, tailored questions to ask a lawyer, and an exportable Word (`.docx`) report.
+
+---
+
+## 🌐 Live Deployment
+
+The application is deployed on **Google Cloud Run**:
+- **URL**: [https://legallens-615970426353.us-central1.run.app](https://legallens-615970426353.us-central1.run.app)
+- **Infrastructure**: Serverless container on Google Cloud Platform with automatic scaling and session affinity for Streamlit WebSockets.
+- **Model Layer**: Powered by Google Gemini (`gemini-3.6-flash` and `gemini-3.5-flash-lite`) with multi-model fallback chains, rate limiting, and circuit breaking.
 
 ---
 
@@ -46,24 +57,9 @@ Open **http://localhost:8501** in your browser.
 
 ---
 
-## 🌐 How to Deploy to Streamlit Cloud (Free & Easy)
-
-1. Go to **[share.streamlit.io](https://share.streamlit.io)** and connect your GitHub account.
-2. Select your repository: `Ayushbms05/LegalLens_AI_Legal_Document_Assistant`.
-3. Set the Main file path to: `app.py`.
-4. Click **Advanced Settings** $\rightarrow$ **Secrets**, and paste:
-   ```toml
-   GEMINI_API_KEY = "your_actual_gemini_api_key_here"
-   GEMINI_MODEL_CHAIN_HEAVY = "gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest"
-   GEMINI_MODEL_CHAIN_LIGHT = "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.6-flash,gemini-flash-lite-latest"
-   ```
-5. Click **Deploy**! Your app will be live with a public URL in less than 2 minutes.
-
----
-
 ## 🧪 Running Tests
 
-To verify that all services and API fallbacks are working properly:
+To verify that all services, security boundaries, and API fallbacks are working properly:
 ```bash
 pytest -v
 ```
